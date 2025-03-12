@@ -1,40 +1,68 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
+const crypto = require('crypto');
 
 const app = express();
-const port = process.env.PORT || 3000;
-
-// Токен вашего бота
-const BOT_TOKEN = '7562219180:AAHMeEi8eAhh4W9Uq03imtmMLVDk075YPr0';
-const CHAT_ID = '7809611963'; // Замените на ваш Telegram chat_id (узнаем позже)
-
-// Парсим тело запроса
+app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Эндпоинт для уведомлений от YooMoney
-app.post('/notify', async (req, res) => {
-    console.log('Received notification:', req.body);
-    const orderId = req.body.label;
+// Настройки
+const BOT_TOKEN = '7562219180:AAEiYGsqxU9ykJCcHbe4ohtE9uCFPO_3hi8'; // Твой BOT_TOKEN
+const CHAT_ID = '7809611963'; // Замени на твой chat_id (получи через @getmyid_bot)
+const SECRET_KEY = '9ZsldNprftbnAxglG4Z9Kq5'; // Секретный ключ из YooMoney
 
-    if (orderId) {
-        // Отправляем уведомление в Telegram
-        const message = `Payment received for order #${orderId}`;
-        try {
-            await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                chat_id: CHAT_ID,
-                text: message
-            });
-            console.log('Notification sent to Telegram');
-        } catch (error) {
-            console.error('Error sending to Telegram:', error);
-        }
+// Проверка подписи уведомления
+function verifyNotification(req) {
+    const notificationParams = [
+        req.body.notification_type,
+        req.body.operation_id,
+        req.body.amount,
+        req.body.currency,
+        req.body.datetime,
+        req.body.sender,
+        req.body.codepro,
+        req.body.label || ''
+    ].join('&');
+
+    const computedSignature = crypto.createHmac('sha1', SECRET_KEY)
+        .update(notificationParams)
+        .digest('hex');
+
+    const receivedSignature = req.body.sha1_hash;
+    return computedSignature === receivedSignature;
+}
+
+// Обработчик уведомлений от YooMoney
+app.post('/notify', (req, res) => {
+    console.log('Received notification:', req.body);
+
+    // Проверка подписи
+    if (!verifyNotification(req)) {
+        console.log('Invalid signature');
+        return res.status(400).send('Invalid signature');
     }
 
-    res.send('OK');
+    // Проверка статуса платежа
+    if (req.body.notification_type === 'p2p-incoming' && req.body.status !== 'success') {
+        const { operation_id, amount, label } = req.body;
+        const message = `Оплата успешна!\nСумма: ${amount} руб.\nЗаказ: ${label}\nID операции: ${operation_id}`;
+        axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            chat_id: CHAT_ID,
+            text: message
+        }).then(() => {
+            console.log('Notification sent to Telegram');
+            res.status(200).send('OK');
+        }).catch(error => {
+            console.error('Error sending to Telegram:', error);
+            res.status(500).send('Error');
+        });
+    } else {
+        res.status(200).send('OK');
+    }
 });
 
-// Запускаем сервер
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
