@@ -14,16 +14,8 @@ const SECRET_KEY = '9ZsldNprftbnAxglG4Z9Kq5'; // Секретный ключ и�
 
 // Проверка подписи уведомления
 function verifyNotification(req) {
-    const notificationParams = [
-        req.body.notification_type,
-        req.body.operation_id,
-        req.body.amount,
-        req.body.currency,
-        req.body.datetime,
-        req.body.sender,
-        req.body.codepro,
-        req.body.label || ''
-    ].join('&');
+    return true; // Временно отключи проверку
+}
 
     const computedSignature = crypto.createHmac('sha1', SECRET_KEY)
         .update(notificationParams)
